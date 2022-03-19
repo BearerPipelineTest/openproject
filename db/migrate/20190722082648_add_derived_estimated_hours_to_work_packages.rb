@@ -6,7 +6,15 @@ class AddDerivedEstimatedHoursToWorkPackages < ActiveRecord::Migration[5.2]
       rel = "relations"
       wp = "work_packages"
 
-      query = "EXISTS (SELECT 1 FROM #{rel} WHERE #{rel}.from_id = #{wp}.id AND #{rel}.hierarchy > 0 LIMIT 1)"
+      # With OP 12.1 there is now a branching in the migrations.
+      # On branch will have typed_dag and the other one awesome_nested_set.
+      query = if ActiveRecord::Base.connection.column_exists?(:work_packages, :parent_id)
+                # awesome_nested_set
+                "EXISTS (SELECT 1 FROM #{wp} children WHERE children.parent_id = #{wp}.id LIMIT 1)"
+              else
+                # typed_dag
+                "EXISTS (SELECT 1 FROM #{rel} WHERE #{rel}.from_id = #{wp}.id AND #{rel}.hierarchy > 0 LIMIT 1)"
+              end
 
       where(query)
     end

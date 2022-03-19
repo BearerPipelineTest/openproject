@@ -34,12 +34,12 @@ class WorkPackage < ApplicationRecord
   include WorkPackage::TimeEntriesCleaner
   include WorkPackage::Ancestors
   prepend WorkPackage::Parent
-  include WorkPackage::TypedDagDefaults
   include WorkPackage::CustomActioned
   include WorkPackage::Hooks
   include WorkPackages::DerivedDates
   include WorkPackages::SpentTime
   include WorkPackages::Costs
+  include WorkPackages::Relations
   include ::Scopes::Scoped
 
   include OpenProject::Journal::AttachmentHelper
@@ -149,6 +149,8 @@ class WorkPackage < ApplicationRecord
                      date_column: "#{quoted_table_name}.created_at",
                      # sort by id so that limited eager loading doesn't break with postgresql
                      order_column: "#{table_name}.id"
+
+  has_closure_tree
 
   ##################### WARNING #####################
   # Do not change the order of acts_as_attachable   #

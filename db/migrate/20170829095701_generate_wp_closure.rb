@@ -27,21 +27,16 @@
 #++
 
 class GenerateWpClosure < ActiveRecord::Migration[5.0]
+  # This migration was altered when using typed_dag was discontinued
+  # in OP 12.1. If the migration is run from scratch, we branch to a case
+  # where the shift to typed_dag has never happened.
+  # This will be the case if an instance is migrated from before OP 7.4 (or newly created).
   def up
-    add_relation_type_column
-
-    update_relation_column_from_relation_type
-
     invert_from_to_on_follows("relation_type = 'precedes'")
-
-    insert_hierarchy_relation_for_parent
-
-    remove_column :relations, :relation_type
-
-    remove_nested_set_columns
   end
 
   def down
+    # TODO: adapt to removed up steps
     recreate_nested_set_columns
 
     invert_from_to_on_follows('follows = 1')
@@ -61,20 +56,6 @@ class GenerateWpClosure < ActiveRecord::Migration[5.0]
     %i(hierarchy relates duplicates blocks follows includes requires)
   end
 
-  def add_relation_type_column
-    change_table :relations do |r|
-      relation_types.each do |column|
-        r.column column, :integer, default: 0, null: false
-      end
-    end
-  end
-
-  def remove_nested_set_columns
-    remove_column :work_packages, :parent_id
-    remove_column :work_packages, :root_id
-    remove_column :work_packages, :lft
-    remove_column :work_packages, :rgt
-  end
 
   def recreate_nested_set_columns
     add_column :work_packages, :parent_id, :integer
@@ -118,55 +99,6 @@ class GenerateWpClosure < ActiveRecord::Migration[5.0]
           #{condition}
       SQL
     end
-  end
-
-  def update_relation_column_from_relation_type
-    ActiveRecord::Base.connection.execute <<-SQL
-      UPDATE
-        relations
-      SET
-        relates =    CASE
-                     WHEN relations.relation_type = 'relates'
-                     THEN 1
-                     ELSE 0
-                     END,
-        duplicates = CASE
-                     WHEN relations.relation_type = 'duplicates'
-                     THEN 1
-                     ELSE 0
-                     END,
-        blocks =     CASE
-                     WHEN relations.relation_type = 'blocks'
-                     THEN 1
-                     ELSE 0
-                     END,
-        follows =    CASE
-                     WHEN relations.relation_type = 'precedes'
-                     THEN 1
-                     ELSE 0
-                     END,
-        includes =   CASE
-                     WHEN relations.relation_type = 'includes'
-                     THEN 1
-                     ELSE 0
-                     END,
-        requires =   CASE
-                     WHEN relations.relation_type = 'requires'
-                     THEN 1
-                     ELSE 0
-                     END
-    SQL
-  end
-
-  def insert_hierarchy_relation_for_parent
-    ActiveRecord::Base.connection.execute <<-SQL
-      INSERT INTO relations
-        (from_id, to_id, hierarchy)
-      SELECT w1.id, w2.id, 1
-      FROM work_packages w1
-      JOIN work_packages w2
-      ON w1.id = w2.parent_id
-    SQL
   end
 
   def set_parent_id

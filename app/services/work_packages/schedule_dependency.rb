@@ -79,7 +79,7 @@ class WorkPackages::ScheduleDependency
   def load_following(work_packages)
     WorkPackage
       .for_scheduling(work_packages)
-      .includes(parent_relation: :from,
+      .includes(:parent,
                 follows_relations: :to)
   end
 

@@ -27,30 +27,17 @@
 #++
 
 class Relation < ApplicationRecord
-  include VirtualAttribute
+  belongs_to :from, class_name: 'WorkPackage'
+  belongs_to :to, class_name: 'WorkPackage'
 
   include ::Scopes::Scoped
 
   scopes :follows_non_manual_ancestors,
+         :follows,
          :visible
 
   scope :of_work_package,
         ->(work_package) { where('from_id = ? OR to_id = ?', work_package, work_package) }
-
-  virtual_attribute :relation_type do
-    types = ((TYPES.keys + [TYPE_HIERARCHY]) & Relation.column_names).select do |name|
-      send(name).positive?
-    end
-
-    case types.length
-    when 1
-      types[0]
-    when 0
-      nil
-    else
-      TYPE_MIXED
-    end
-  end
 
   TYPE_RELATES      = 'relates'.freeze
   TYPE_DUPLICATES   = 'duplicates'.freeze
@@ -116,8 +103,6 @@ class Relation < ApplicationRecord
 
   before_validation :reverse_if_needed
 
-  before_save :set_type_column
-
   [TYPE_RELATES,
    TYPE_DUPLICATES,
    TYPE_BLOCKS,
@@ -127,8 +112,8 @@ class Relation < ApplicationRecord
    TYPE_REQUIRES,
    TYPE_HIERARCHY].each do |type|
     define_method "#{type}=" do |value|
-      instance_variable_set(:"@relation_type_set", nil)
-      super(value)
+      raise 'To be removed'
+      self.relation_type = "#{type}"
     end
   end
 
@@ -257,11 +242,8 @@ class Relation < ApplicationRecord
   private
 
   def shared_hierarchy?
-    to_from = hierarchy_but_not_self(to: to, from: from)
-    from_to = hierarchy_but_not_self(to: from, from: to)
-
-    to_from
-      .or(from_to)
+    to.ancestors.where(id: from.id)
+      .or(from.ancestors.where(id: to.id))
       .any?
   end
 
@@ -274,19 +256,6 @@ class Relation < ApplicationRecord
     errors.add :base, :cant_link_a_work_package_with_a_descendant if shared_hierarchy?
   end
 
-  def set_type_column
-    if relation_type_changed? && relation_type_was
-      was_column = self.class.relation_column(relation_type_was)
-      write_attribute was_column, 0
-    end
-
-    return unless relation_type
-
-    new_column = self.class.relation_column(relation_type)
-
-    send("#{new_column}=", 1) if new_column
-  end
-
   # Reverses the relation if needed so that it gets stored in the proper way
   def reverse_if_needed
     if TYPES.key?(relation_type) && TYPES[relation_type][:reverse]
@@ -295,9 +264,5 @@ class Relation < ApplicationRecord
       self.from = work_package_tmp
       self.relation_type = TYPES[relation_type][:reverse]
     end
-  end
-
-  def hierarchy_but_not_self(to:, from:)
-    Relation.hierarchy.where(to: to, from: from).where.not(id: id)
   end
 end

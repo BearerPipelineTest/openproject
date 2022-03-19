@@ -508,7 +508,6 @@ describe WorkPackages::SetScheduleService do
       allow(parent_work_package)
         .to receive(:descendants)
               .and_return([work_package])
-      work_package.build_parent_relation from_id: parent_work_package.id
     end
 
     it_behaves_like 'reschedules' do

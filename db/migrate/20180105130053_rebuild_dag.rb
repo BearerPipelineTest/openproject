@@ -29,36 +29,17 @@ require_relative './migration_utils/utils'
 
 class RebuildDag < ActiveRecord::Migration[5.0]
   include ::Migration::Utils
-
+  # This migration was altered when using typed_dag was discontinued
+  # in OP 12.1. If the migration is run from scratch, we branch to a case
+  # where the shift to typed_dag has never happened.
+  # This will be the case if an instance is migrated from before OP 7.4 (or newly created).
   def up
-    truncate_closure_entries
-    remove_duplicate_relations
-
-    if index_exists?(:relations, relation_types)
-      remove_index :relations, relation_types
-    end
-
-    add_column :relations, :count, :integer, default: 0, null: false
-
-    set_count_to_1
-
-    add_index :relations,
-              %i(from_id to_id hierarchy relates duplicates blocks follows includes requires),
-              name: 'index_relations_on_type_columns',
-              unique: true
-
-    say_with_time 'Building the directed acyclic graph of all relations. This might take a while.' do
-      WorkPackage.rebuild_dag! 1000
-    end
-
-    add_count_index
-
-    add_scheduling_indices
-
-    add_non_hierarchy_index
+    # emptied
   end
 
   def down
+    # TODO: Adapt to changed up migration
+    # possibly by turning it into a non reversible migration
     if column_exists? :relations, :count
       remove_column :relations, :count
     end
@@ -141,24 +122,6 @@ class RebuildDag < ActiveRecord::Migration[5.0]
       DELETE FROM relations
       WHERE (#{relation_types.join(' + ')} > 1)
       OR (#{relation_types.join(' + ')} = 0)
-    SQL
-  end
-
-  def remove_duplicate_relations
-    equal_conditions = relation_types.map do |type|
-      "r1.#{type} = r2.#{type}"
-    end.join(' AND ')
-
-    ActiveRecord::Base.connection.execute <<-SQL
-      DELETE
-      FROM relations
-      WHERE id IN (SELECT id FROM (SELECT r1.id
-                                   FROM relations r1
-                                   JOIN relations r2
-                                   ON r1.id > r2.id
-                                   AND r1.from_id = r2.from_id
-                                   AND r1.to_id = r2.to_id
-                                   AND #{equal_conditions}) delete_ids)
     SQL
   end
 

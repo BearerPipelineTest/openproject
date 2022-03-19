@@ -77,7 +77,7 @@ module WorkPackages::Scopes
       def for_scheduling(work_packages)
         return none if work_packages.empty?
 
-        sql = <<~SQL
+        sql = <<~SQL.squish
           WITH
             RECURSIVE
             #{paths_sql(work_packages)}
@@ -124,47 +124,71 @@ module WorkPackages::Scopes
             UNION
 
             SELECT
-              CASE
-                WHEN relations.to_id = to_schedule.id
-                THEN relations.from_id
-                ELSE relations.to_id
-              END id,
-              (related_work_packages.schedule_manually OR COALESCE(descendants.schedule_manually, false)) manually
+              relations.from_id id,
+              scheduling.manually
             FROM
               to_schedule
-            JOIN
-              relations
-              ON NOT to_schedule.manually
-              AND (#{relations_condition_sql})
-              AND
-                ((relations.to_id = to_schedule.id)
-                OR (relations.from_id = to_schedule.id AND relations.follows = 0))
-            LEFT JOIN work_packages related_work_packages
-              ON (CASE
-                WHEN relations.to_id = to_schedule.id
-                THEN relations.from_id
-                ELSE relations.to_id
-                END) = related_work_packages.id
+            JOIN LATERAL
+              (
+                SELECT
+                  from_id,
+                  to_id
+                FROM
+                  relations
+                WHERE NOT to_schedule.manually
+                  AND (relations.to_id = to_schedule.id AND relations.relation_type = '#{Relation::TYPE_FOLLOWS}')
+              UNION
+                SELECT
+                  CASE
+                    WHEN work_packages.id = to_schedule.id
+                    THEN work_packages.parent_id
+                    ELSE work_packages.id
+                    END from_id,
+                  to_schedule.id to_id
+                FROM
+                  work_packages
+                WHERE
+                  NOT to_schedule.manually
+                  AND (work_packages.id = to_schedule.id OR work_packages.parent_id = to_schedule.id)
+              ) relations ON relations.to_id = to_schedule.id
             LEFT JOIN LATERAL (
               SELECT
-                relations.from_id,
-                bool_and(COALESCE(work_packages.schedule_manually, false)) schedule_manually
-              FROM relations relations
-              JOIN work_packages
-              ON
-                work_packages.id = relations.to_id
-                AND related_work_packages.id = relations.from_id
-                AND relations.follows = 0 AND #{relations_condition_sql(transitive: true)}
-              GROUP BY relations.from_id
-            ) descendants ON related_work_packages.id = descendants.from_id
+                work_package_id,
+                bool_and(manually) manually
+              FROM
+              (
+                SELECT
+                  origin.ancestor_id work_package_id,
+                  origin.descendant_id leaf_id,
+                  bool_or(leaves_wp.schedule_manually OR up_wp.schedule_manually) manually
+                FROM
+                  work_package_hierarchies origin
+                JOIN
+                  work_package_hierarchies down
+                ON
+                  origin.ancestor_id = down.ancestor_id
+                JOIN
+                  work_package_hierarchies up
+                ON
+                  origin.descendant_id = up.descendant_id
+                  AND down.descendant_id = up.ancestor_id
+                JOIN
+                  work_packages leaves_wp
+                ON leaves_wp.id = origin.descendant_id
+                JOIN
+                  work_packages up_wp
+                ON up_wp.id = up.ancestor_id
+                WHERE EXISTS (
+                  SELECT ancestor_id
+                  FROM work_package_hierarchies leaves
+                  GROUP BY ancestor_id
+                  HAVING MAX(generations) = 0 AND leaves.ancestor_id = origin.descendant_id
+                ) AND origin.ancestor_id = relations.from_id
+                GROUP BY origin.ancestor_id, origin.descendant_id
+              ) scheduling
+              GROUP BY work_package_id
+            ) scheduling ON scheduling.work_package_id = relations.from_id
           )
-        SQL
-      end
-
-      def relations_condition_sql(transitive: false)
-        <<~SQL.squish
-          "relations"."relates" = 0 AND "relations"."duplicates" = 0 AND "relations"."blocks" = 0 AND "relations"."includes" = 0 AND "relations"."requires" = 0
-            AND (relations.hierarchy + relations.relates + relations.duplicates + relations.follows + relations.blocks + relations.includes + relations.requires #{transitive ? '>' : ''}= 1)
         SQL
       end
     end
