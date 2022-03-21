@@ -28,9 +28,67 @@ module WorkPackages::Relations
   extend ActiveSupport::Concern
 
   included do
-    has_many :follows_relations,
-             -> { where type: 'follows' },
+    # Relations pointing to another work package.
+    # In this case,
+    #   * from is self
+    #   * to is the other work package involved
+    has_many :relations_to,
              class_name: 'Relation',
-             foreign_key: :from_id
+             foreign_key: :from_id,
+             autosave: true,
+             dependent: :nullify,
+             inverse_of: :from
+
+    # Relations pointing away from the work package.
+    # In this case,
+    #   * to is self
+    #   * from is the other work package involved
+    has_many :relations_from,
+             class_name: 'Relation',
+             foreign_key: :to_id,
+             autosave: true,
+             dependent: :nullify,
+             inverse_of: :to
+
+    has_many :follows_relations,
+             -> { where(relation_type: Relation::TYPE_FOLLOWS) },
+             class_name: 'Relation',
+             foreign_key: :from_id,
+             autosave: true,
+             dependent: :nullify
+
+    # Relations where the current work package blocks another one.
+    # In this case,
+    #   * from is self.id
+    #   * to is the blocked work package
+    has_many :blocks_relations,
+             -> { where(relation_type: Relation::TYPE_BLOCKS) },
+             class_name: 'Relation',
+             foreign_key: :from_id,
+             autosave: true,
+             dependent: :nullify
+
+    # Relations where the current work package duplicates another one.
+    # In this case,
+    #   * from is self.id
+    #   * to is the duplicated work package
+    has_many :duplicates_relations,
+             -> { where(relation_type: Relation::TYPE_DUPLICATES) },
+             class_name: 'Relation',
+             foreign_key: :from_id,
+             autosave: true,
+             dependent: :nullify
+
+    # Relations where the current work package is duplicated by another one.
+    # In this case,
+    #   * from is the duplicate work package
+    #   * to is self
+    has_many :duplicated_relations,
+             -> { where(relation_type: Relation::TYPE_DUPLICATES) },
+             class_name: 'Relation',
+             foreign_key: :to_id,
+             autosave: true,
+             dependent: :nullify,
+             inverse_of: :to
   end
 end

@@ -29,7 +29,7 @@
 class Impediment < Task
   extend OpenProject::Backlogs::Mixins::PreventIssueSti
 
-  after_save :update_blocks_list
+  before_save :update_blocks_list
 
   validate :validate_blocks_list
 
@@ -45,13 +45,15 @@ class Impediment < Task
   end
 
   def blocks_ids
-    @blocks_ids_list ||= block_ids
+    @blocks_ids_list ||= blocks_relations.map(&:to_id)
   end
 
   private
 
   def update_blocks_list
-    self.block_ids = blocks_ids
+    mark_blocks_to_destroy
+
+    build_new_blocks
   end
 
   def validate_blocks_list
@@ -63,6 +65,16 @@ class Impediment < Task
         errors.add :blocks_ids,
                    :can_only_contain_work_packages_of_current_sprint
       end
+    end
+  end
+
+  def mark_blocks_to_destroy
+    blocks_relations.reject { |relation| blocks_ids.include?(relation.to_id) }.each(&:mark_for_destruction)
+  end
+
+  def build_new_blocks
+    (blocks_ids - blocks_relations.select { |relation| blocks_ids.include?(relation.to_id) }.map(&:to_id)).each do |id|
+      blocks_relations.build(to_id: id)
     end
   end
 end

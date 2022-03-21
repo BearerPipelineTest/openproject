@@ -28,6 +28,7 @@
 
 require 'spec_helper'
 
+# rubocop:disable RSpec/MultipleMemoizedHelpers
 describe WorkPackages::SetScheduleService do
   let(:work_package) do
     build_stubbed(:stubbed_work_package,
@@ -43,11 +44,12 @@ describe WorkPackages::SetScheduleService do
   let(:user) { build_stubbed(:user) }
   let(:type) { build_stubbed(:type) }
 
-  def stub_follower(start_date, due_date, predecessors)
+  def stub_follower(start_date, due_date, predecessors, parent: nil)
     work_package = build_stubbed(:stubbed_work_package,
                                  type: type,
                                  start_date: start_date,
-                                 due_date: due_date)
+                                 due_date: due_date,
+                                 parent: parent)
 
     relations = predecessors.map do |predecessor, delay|
       build_stubbed(:follows_relation,
@@ -64,19 +66,10 @@ describe WorkPackages::SetScheduleService do
   end
 
   def stub_follower_child(parent, start, due)
-    child = stub_follower(start,
-                          due,
-                          {})
-
-    relation = build_stubbed(:hierarchy_relation,
-                             from: parent,
-                             to: child)
-
-    allow(child)
-      .to receive(:parent_relation)
-      .and_return relation
-
-    child
+    stub_follower(start,
+                  due,
+                  {},
+                  parent: parent)
   end
 
   let(:follower1_start_date) { Date.today + 1.day }
@@ -85,7 +78,7 @@ describe WorkPackages::SetScheduleService do
   let(:following_work_package1) do
     stub_follower(follower1_start_date,
                   follower1_due_date,
-                  work_package => follower1_delay)
+                  { work_package => follower1_delay })
   end
   let(:follower2_start_date) { Date.today + 4.day }
   let(:follower2_due_date) { Date.today + 8.day }
@@ -93,7 +86,7 @@ describe WorkPackages::SetScheduleService do
   let(:following_work_package2) do
     stub_follower(follower2_start_date,
                   follower2_due_date,
-                  following_work_package1 => follower2_delay)
+                  { following_work_package1 => follower2_delay })
   end
   let(:follower3_start_date) { Date.today + 9.day }
   let(:follower3_due_date) { Date.today + 10.day }
@@ -101,7 +94,7 @@ describe WorkPackages::SetScheduleService do
   let(:following_work_package3) do
     stub_follower(follower3_start_date,
                   follower3_due_date,
-                  following_work_package2 => follower3_delay)
+                  { following_work_package2 => follower3_delay })
   end
 
   let(:parent_follower1_start_date) { follower1_start_date }
@@ -112,31 +105,16 @@ describe WorkPackages::SetScheduleService do
                                  parent_follower1_due_date,
                                  {})
 
-    relation = build_stubbed(:hierarchy_relation,
-                             from: work_package,
-                             to: following_work_package1)
-
-    allow(following_work_package1)
-      .to receive(:parent_relation)
-            .and_return relation
+    following_work_package1.parent = work_package
 
     work_package
   end
 
   let(:follower_sibling_work_package) do
-    sibling = stub_follower(follower1_due_date + 2.days,
-                            follower1_due_date + 4.days,
-                            {})
-
-    relation = build_stubbed(:hierarchy_relation,
-                             from: parent_following_work_package1,
-                             to: sibling)
-
-    allow(sibling)
-      .to receive(:parent_relation)
-            .and_return relation
-
-    sibling
+    stub_follower(follower1_due_date + 2.days,
+                  follower1_due_date + 4.days,
+                  {},
+                  parent: parent_following_work_package1)
   end
 
   subject { instance.call(attributes) }
@@ -459,8 +437,8 @@ describe WorkPackages::SetScheduleService do
       let(:following_work_package1) do
         stub_follower(follower1_start_date,
                       follower1_due_date,
-                      work_package => follower1_delay,
-                      another_successor => 0)
+                      { work_package => follower1_delay,
+                        another_successor => 0})
       end
       let(:another_successor) do
         build_stubbed(:stubbed_work_package,
@@ -753,7 +731,7 @@ describe WorkPackages::SetScheduleService do
       end
     end
 
-    context 'unchanged dates (e.g. when creating a follows relation) and successor\'s first child' do
+    context 'unchanged dates (e.g. when creating a follows relation) and successor\'s first child needs to be rescheduled' do
       let(:follower1_start_date) { work_package_due_date - 3.days }
       let(:follower1_due_date) { work_package_due_date + 10.days }
       let(:child1_start_date) { follower1_start_date }
@@ -867,7 +845,7 @@ describe WorkPackages::SetScheduleService do
     let(:following_work_package3) do
       stub_follower(follower3_start_date,
                     follower3_due_date,
-                    work_package => follower3_delay)
+                    { work_package => follower3_delay })
     end
     let(:follower4_start_date) { Date.today + 9.days }
     let(:follower4_due_date) { Date.today + 10.days }
@@ -876,8 +854,7 @@ describe WorkPackages::SetScheduleService do
     let(:following_work_package4) do
       stub_follower(follower4_start_date,
                     follower4_due_date,
-                    following_work_package2 => follower4_delay_2,
-                    following_work_package3 => follower4_delay_3)
+                    { following_work_package2 => follower4_delay_2, following_work_package3 => follower4_delay_3 })
     end
     let!(:following) do
       [following_work_package1,
@@ -975,3 +952,4 @@ describe WorkPackages::SetScheduleService do
     end
   end
 end
+# rubocop:enable RSpec/MultipleMemoizedHelpers

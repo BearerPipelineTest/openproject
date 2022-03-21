@@ -64,9 +64,8 @@ module Relations
     end
 
     def validate_only_one_follow_direction_between_hierarchies
-      return unless [Relation::TYPE_HIERARCHY, Relation::TYPE_FOLLOWS].include? model.relation_type
-
-      if follow_relations_in_opposite_direction.exists?
+      if (model.from_id_changed? || model.to_id_changed?) &&
+         WorkPackage.relatable(model.from, model.relation_type).where(id: model.to).empty?
         errors.add :base, I18n.t(:'activerecord.errors.messages.circular_dependency')
       end
     end
@@ -78,7 +77,7 @@ module Relations
     end
 
     def manage_relations_permission?
-      if !manage_relations?
+      unless manage_relations?
         errors.add :base, :error_unauthorized
       end
     end

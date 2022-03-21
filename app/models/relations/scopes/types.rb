@@ -25,13 +25,16 @@
 #  See COPYRIGHT and LICENSE files for more details.
 
 module Relations::Scopes
-  module Follows
+  module Types
     extend ActiveSupport::Concern
 
     class_methods do
-      # Returns follows relationships
-      def follows
-        where(relation_type: Relation::TYPE_FOLLOWS)
+      ::Relation::TYPES.each do |type, definition|
+        next if definition[:reverse] || type == ::Relation::TYPE_INCLUDES
+
+        define_method type do
+          where(relation_type: type)
+        end
       end
     end
   end

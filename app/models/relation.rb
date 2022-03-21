@@ -30,14 +30,6 @@ class Relation < ApplicationRecord
   belongs_to :from, class_name: 'WorkPackage'
   belongs_to :to, class_name: 'WorkPackage'
 
-  include ::Scopes::Scoped
-
-  scopes :follows_non_manual_ancestors,
-         :follows,
-         :visible
-
-  scope :of_work_package,
-        ->(work_package) { where('from_id = ? OR to_id = ?', work_package, work_package) }
 
   TYPE_RELATES      = 'relates'.freeze
   TYPE_DUPLICATES   = 'duplicates'.freeze
@@ -51,7 +43,6 @@ class Relation < ApplicationRecord
   TYPE_REQUIRES     = 'requires'.freeze
   TYPE_REQUIRED     = 'required'.freeze
   TYPE_HIERARCHY    = 'hierarchy'.freeze
-  TYPE_MIXED        = 'mixed'.freeze
 
   TYPES = {
     TYPE_RELATES => {
@@ -97,25 +88,20 @@ class Relation < ApplicationRecord
     }
   }.freeze
 
+  include ::Scopes::Scoped
+
+  scopes :follows_non_manual_ancestors,
+         :types,
+         :visible
+
+  scope :of_work_package,
+        ->(work_package) { where(from: work_package).or(where(to: work_package)) }
+
   validates_numericality_of :delay, allow_nil: true
 
-  validate :validate_sanity_of_relation
+  validates :to, uniqueness: { scope: :from }
 
   before_validation :reverse_if_needed
-
-  [TYPE_RELATES,
-   TYPE_DUPLICATES,
-   TYPE_BLOCKS,
-   TYPE_PRECEDES,
-   TYPE_FOLLOWS,
-   TYPE_INCLUDES,
-   TYPE_REQUIRES,
-   TYPE_HIERARCHY].each do |type|
-    define_method "#{type}=" do |value|
-      raise 'To be removed'
-      self.relation_type = "#{type}"
-    end
-  end
 
   def self.relation_column(type)
     if TYPES.key?(type) && TYPES[type][:reverse]
@@ -125,22 +111,15 @@ class Relation < ApplicationRecord
     end
   end
 
-  def self.from_work_package_or_ancestors(work_package)
-    ancestor_or_self_ids = work_package
-                           .ancestors_relations
-                           .or(where(from_id: work_package.id))
-                           .select(:from_id)
-
-    where(from_id: ancestor_or_self_ids)
-  end
-
   def self.from_parent_to_self_and_descendants(work_package)
-    from_work_package_or_ancestors(work_package.parent)
+    # TODO: handle transitive connections
+    where(from_id: work_package.self_and_ancestors.select(:id))
       .where(to_id: work_package.self_and_descendants.select(:id))
   end
 
   def self.from_self_and_descendants_to_ancestors(work_package)
     # using parent.self_and_ancestors to be able to cope with unpersisted parent
+    # TODO: handle transitive connections
     where(from_id: work_package.self_and_descendants.select(:id))
       .where(to_id: work_package.parent.self_and_ancestors.select(:id))
   end
@@ -158,30 +137,6 @@ class Relation < ApplicationRecord
     of_work_package(work_package)
       .non_hierarchy
       .direct
-  end
-
-  def self.to_root(work_package)
-    # MySQL does not support limit inside a subquery.
-    # As this is intended to be used inside a subquery, we have to avoid using limit
-    joins("LEFT OUTER JOIN relations r2
-          ON relations.to_id = r2.to_id
-          AND relations.hierarchy < r2.hierarchy")
-      .where('r2.id IS NULL')
-      .where(to_id: work_package.id)
-      .hierarchy_or_reflexive
-  end
-
-  def self.tree_of(work_package)
-    root_id = to_root(work_package)
-              .select(:from_id)
-
-    hierarchy
-      .where(from_id: root_id)
-  end
-
-  def self.sibling_of(work_package)
-    hierarchy
-      .where(from_id: work_package.parent_id)
   end
 
   def other_work_package(work_package)
@@ -224,6 +179,12 @@ class Relation < ApplicationRecord
   # since we don't plan to use dj with Relation objects, this should be fine
   def delay
     self[:delay]
+  end
+
+  TYPES.keys.each do |type|
+    define_method "#{type}?" do
+      canonical_type == self.class.canonical_type(type)
+    end
   end
 
   def canonical_type

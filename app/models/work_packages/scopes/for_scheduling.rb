@@ -80,7 +80,7 @@ module WorkPackages::Scopes
         sql = <<~SQL.squish
           WITH
             RECURSIVE
-            #{paths_sql(work_packages)}
+            #{scheduling_paths_sql(work_packages)}
 
             SELECT id
             FROM to_schedule
@@ -114,7 +114,7 @@ module WorkPackages::Scopes
       #     whether *all* of the added work package's descendants are automatically or manually scheduled.
       #
       # Paths whose ending work package is marked to be manually scheduled are not joined with any more.
-      def paths_sql(work_packages)
+      def scheduling_paths_sql(work_packages)
         values = work_packages.map { |wp| "(#{wp.id}, false)" }.join(', ')
 
         <<~SQL.squish
@@ -140,16 +140,17 @@ module WorkPackages::Scopes
               UNION
                 SELECT
                   CASE
-                    WHEN work_packages.id = to_schedule.id
-                    THEN work_packages.parent_id
-                    ELSE work_packages.id
+                    WHEN work_package_hierarchies.ancestor_id = to_schedule.id
+                    THEN work_package_hierarchies.descendant_id
+                    ELSE work_package_hierarchies.ancestor_id
                     END from_id,
                   to_schedule.id to_id
                 FROM
-                  work_packages
+                  work_package_hierarchies
                 WHERE
                   NOT to_schedule.manually
-                  AND (work_packages.id = to_schedule.id OR work_packages.parent_id = to_schedule.id)
+                  AND (work_package_hierarchies.ancestor_id = to_schedule.id
+                       OR work_package_hierarchies.descendant_id = to_schedule.id)
               ) relations ON relations.to_id = to_schedule.id
             LEFT JOIN LATERAL (
               SELECT

@@ -114,8 +114,8 @@ module WorkPackages
 
     validate :validate_parent_exists
     validate :validate_parent_in_same_project
-    validate :validate_parent_not_subtask
     validate :validate_parent_not_self
+    validate :validate_parent_not_subtask
 
     validate :validate_status_exists
     validate :validate_status_transition
@@ -245,8 +245,11 @@ module WorkPackages
 
     # have to validate ourself as the parent relation is created after saving
     def validate_parent_not_subtask
-      if model.parent_id_changed? && model.parent && invalid_relations_with_new_hierarchy.exists?
-        errors.add :base, :cant_link_a_work_package_with_a_descendant
+      if model.parent_id_changed? &&
+         model.parent_id &&
+         errors.exclude?(:parent) &&
+         WorkPackage.relatable(model, Relation::TYPE_HIERARCHY).where(id: model.parent_id).empty?
+        errors.add :parent, :cant_link_a_work_package_with_a_descendant
       end
     end
 
@@ -360,7 +363,6 @@ module WorkPackages
     def invalid_relations_with_new_hierarchy
       query = Relation.from_parent_to_self_and_descendants(model)
                       .or(Relation.from_self_and_descendants_to_ancestors(model))
-                      .direct
 
       # Ignore the immediate relation from the old parent to the model
       # since that will still exist before saving.

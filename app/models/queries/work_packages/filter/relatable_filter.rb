@@ -47,13 +47,7 @@ class Queries::WorkPackages::Filter::RelatableFilter < Queries::WorkPackages::Fi
   end
 
   def scope
-    if operator == Relation::TYPE_RELATES
-      relateable_from_or_to
-    elsif operator != 'parent' && canonical_operator == operator
-      relateable_to
-    else
-      relateable_from
-    end
+    WorkPackage.relatable(WorkPackage.find_by(id: values.first), Relation.canonical_type(operator))
   end
 
   private
